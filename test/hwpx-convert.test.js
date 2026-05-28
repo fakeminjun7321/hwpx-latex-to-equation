@@ -157,3 +157,19 @@ test('한글 복구 경고 방지: 수정된 단락의 linesegarray 제거, 미�
   const p2 = xml.slice(xml.indexOf('id="2"'));
   assert.ok(p2.includes('<hp:linesegarray'), '미수정 단락의 linesegarray는 보존');
 });
+
+test('수식 개체 속성: version·font·lineMode 부여(편집기 없이 즉시 렌더링)', async () => {
+  const NS = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"';
+  const sec =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<hs:sec ' + NS + '><hp:p id="1"><hp:run charPrIDRef="0"><hp:t>$x^2$</hp:t></hp:run></hp:p></hs:sec>';
+  const buf = await makeMiniHwpx(sec);
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  const { blob } = await HwpxConvert.convertArrayBuffer(ab, DEPS);
+  const zip = await JSZip.loadAsync(await blobToBuffer(blob));
+  const xml = await zip.file('Contents/section0.xml').async('string');
+  const eq = xml.slice(xml.indexOf('<hp:equation'), xml.indexOf('</hp:equation>'));
+  assert.ok(eq.includes('version="Equation Version 60"'), 'version 속성 부여');
+  assert.ok(eq.includes('font="HancomEQN"'), 'HancomEQN 글꼴 지정');
+  assert.ok(eq.includes('lineMode="CHAR"'), 'lineMode=CHAR 지정');
+});

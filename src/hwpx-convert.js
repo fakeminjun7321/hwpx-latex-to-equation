@@ -22,6 +22,12 @@
   'use strict';
 
   var HP_NS = 'http://www.hancom.co.kr/hwpml/2011/paragraph';
+  var HH_NS = 'http://www.hancom.co.kr/hwpml/2011/head';
+
+  // 수식 글자 크기를 본문 대비 키울 값(hpt 단위, 100 = 1pt).
+  var EQUATION_SIZE_BUMP_HPT = 100;
+  // 수식 글꼴 (한컴 수식 편집기 내부 렌더링 폰트).
+  var EQUATION_FONT = 'HancomEQN';
 
   // ── 의존성 해석 ────────────────────────────────────────────────
   function resolveDeps(deps) {
@@ -45,6 +51,80 @@
   // ── 스타일 (파이썬 EquationStyle 기본값) ───────────────────────
   function defaultStyle() {
     return { baseUnit: 1000, textColor: '#000000', lineThickness: 100, letterSpacing: 0 };
+  }
+
+  // ── header.xml 안의 hh:charPr 목록을 다루는 컨텍스트 ───────────
+  //
+  // 수식 글자를 본문 대비 +1pt로 키우려면, 원본 텍스트 런의 charPr(글자 크기 등
+  // 글자 모양) 을 그대로 복제한 뒤 height 만 +100(=+1pt) 으로 바꾼 새 charPr 를
+  // header.xml 에 추가하고, 수식 런이 그 새 charPr 를 가리키도록 charPrIDRef 를
+  // 교체해야 한다. 또 수식 자체의 hp:equation/@baseUnit 도 동일 크기로 맞춘다.
+  function createHeaderCtx(headerXmlString, DOMParserCls, XMLSerializerCls) {
+    if (!headerXmlString) return null;
+    var doc;
+    try {
+      doc = new DOMParserCls().parseFromString(headerXmlString, 'application/xml');
+    } catch (e) { return null; }
+    var perr = doc.getElementsByTagName('parsererror');
+    if (perr && perr.length) return null;
+
+    var charPropsEl = doc.getElementsByTagNameNS(HH_NS, 'charProperties')[0];
+    if (!charPropsEl) return null;
+
+    var charPrEls = doc.getElementsByTagNameNS(HH_NS, 'charPr');
+    var byId = Object.create(null);
+    var maxId = -1;
+    for (var i = 0; i < charPrEls.length; i++) {
+      var el = charPrEls[i];
+      var idStr = el.getAttribute('id');
+      var heightStr = el.getAttribute('height');
+      var id = parseInt(idStr, 10);
+      var height = parseInt(heightStr, 10);
+      if (!isNaN(id)) {
+        byId[idStr] = { el: el, height: isNaN(height) ? null : height };
+        if (id > maxId) maxId = id;
+      }
+    }
+    if (maxId < 0) return null;
+
+    var nextId = maxId + 1;
+    var enlargedCache = Object.create(null); // origId(string) -> newId(string)
+    var dirty = false;
+
+    return {
+      getHeight: function (origId) {
+        return (origId != null && byId[origId]) ? byId[origId].height : null;
+      },
+      // 원본 charPr 의 +1pt 클론 ID 를 반환. 없으면 새로 만들어 header.xml 에 추가.
+      // 원본을 찾지 못하거나 height 가 없으면 null 반환(=원본 유지).
+      getEnlargedId: function (origId) {
+        if (origId == null) return null;
+        if (enlargedCache[origId]) return enlargedCache[origId];
+        var orig = byId[origId];
+        if (!orig || orig.height == null) return null;
+
+        var cloned = orig.el.cloneNode(true);
+        var newIdStr = String(nextId++);
+        cloned.setAttribute('id', newIdStr);
+        cloned.setAttribute('height', String(orig.height + EQUATION_SIZE_BUMP_HPT));
+        charPropsEl.appendChild(cloned);
+
+        var cntAttr = charPropsEl.getAttribute('itemCnt');
+        var cnt = parseInt(cntAttr, 10);
+        if (!isNaN(cnt)) charPropsEl.setAttribute('itemCnt', String(cnt + 1));
+
+        byId[newIdStr] = { el: cloned, height: orig.height + EQUATION_SIZE_BUMP_HPT };
+        enlargedCache[origId] = newIdStr;
+        dirty = true;
+        return newIdStr;
+      },
+      isDirty: function () { return dirty; },
+      serialize: function () {
+        var serialized = new XMLSerializerCls().serializeToString(doc);
+        var clean = removeRedundantNsDecls(serialized);
+        return ensureXmlDeclaration(clean, headerXmlString);
+      }
+    };
   }
 
   // ── ID 생성기 (파이썬 IdGenerator) ─────────────────────────────
@@ -197,15 +277,22 @@
     run.appendChild(t);
     return run;
   }
-  function makeEquation(doc, script, id, style) {
+  function makeEquation(doc, script, id, style, baseUnitOverride) {
+    var baseUnit = (baseUnitOverride != null) ? baseUnitOverride : style.baseUnit;
     var eq = doc.createElementNS(HP_NS, 'hp:equation');
     eq.setAttribute('id', id);
     eq.setAttribute('type', '0');
     eq.setAttribute('textColor', style.textColor);
-    eq.setAttribute('baseUnit', String(style.baseUnit));
+    eq.setAttribute('baseUnit', String(baseUnit));
     eq.setAttribute('letterSpacing', String(style.letterSpacing));
     eq.setAttribute('lineThickness', String(style.lineThickness));
     eq.setAttribute('baseLine', '0');
+    eq.setAttribute('font', EQUATION_FONT);
+    eq.setAttribute('lineMode', 'CHAR');
+    // version: 한글이 직접 만든 수식엔 늘 붙는 속성. 이게 없으면 수식이
+    // "미처리" 상태로 남아, 수식편집기를 한 번 열었다 닫아야 정상 렌더링된다.
+    // 네이티브 수식과 동일하게 박아 두면 파일을 열자마자 바로 렌더링된다.
+    eq.setAttribute('version', 'Equation Version 60');
 
     var sz = doc.createElementNS(HP_NS, 'hp:sz');
     sz.setAttribute('width', '0');
@@ -229,11 +316,29 @@
     eq.appendChild(sc);
     return eq;
   }
-  function makeEquationRun(doc, script, id, attrs, style) {
+  function makeEquationRun(doc, script, id, attrs, style, baseUnitOverride) {
     var run = doc.createElementNS(HP_NS, 'hp:run');
     applyAttrs(run, attrs);
-    run.appendChild(makeEquation(doc, script, id, style));
+    run.appendChild(makeEquation(doc, script, id, style, baseUnitOverride));
     return run;
+  }
+
+  // 런 속성 목록에서 charPrIDRef 값을 찾는다.
+  function findCharPrIDRef(attrs) {
+    for (var i = 0; i < attrs.length; i++) {
+      if (attrs[i].name === 'charPrIDRef') return attrs[i].value;
+    }
+    return null;
+  }
+  // 런 속성 목록을 복제하면서 charPrIDRef 값을 교체한다. 원본 배열은 건드리지 않는다.
+  function withCharPrIDRef(attrs, newRef) {
+    var found = false;
+    var out = attrs.map(function (a) {
+      if (a.name === 'charPrIDRef') { found = true; return { name: a.name, value: newRef }; }
+      return { name: a.name, value: a.value };
+    });
+    if (!found) out.push({ name: 'charPrIDRef', value: newRef });
+    return out;
   }
 
   // ── 런 그룹 내 LaTeX 치환 (파이썬 replace_latex_in_run_group) ──
@@ -268,7 +373,7 @@
     }
     return result;
   }
-  function replaceLatexInRunGroup(doc, runs, idGen, convert, style, stats) {
+  function replaceLatexInRunGroup(doc, runs, idGen, convert, style, stats, headerCtx) {
     var spans = buildTextRunSpans(runs);
     var text = spans.map(function (s) { return s.text; }).join('');
     var latexSpans = findLatexSpans(text, stats);
@@ -281,7 +386,21 @@
       pushAll(result, textSliceToRuns(doc, spans, cursor, ls.start));
       var runAttrs = attrsAtPosition(spans, ls.start);
       var script = convert(ls.raw);
-      result.push(makeEquationRun(doc, script, idGen.next(), runAttrs, style));
+
+      // 수식 런 크기 보정: 원본 텍스트의 글자 크기(charPr.height, hpt 단위)를
+      // 찾아내 +1pt 클론을 만들고 charPrIDRef 를 그쪽으로 돌린다.
+      // 동시에 hp:equation/@baseUnit 을 같은 크기로 설정해 수식 내부 렌더링도
+      // 함께 키운다. header.xml 정보가 없거나 매칭이 실패하면 원본 그대로 둔다.
+      var eqAttrs = runAttrs;
+      var eqBaseUnit = null;
+      if (headerCtx) {
+        var origCharPrId = findCharPrIDRef(runAttrs);
+        var origHeight = headerCtx.getHeight(origCharPrId);
+        var newCharPrId = headerCtx.getEnlargedId(origCharPrId);
+        if (newCharPrId) eqAttrs = withCharPrIDRef(runAttrs, newCharPrId);
+        if (origHeight != null) eqBaseUnit = origHeight + EQUATION_SIZE_BUMP_HPT;
+      }
+      result.push(makeEquationRun(doc, script, idGen.next(), eqAttrs, style, eqBaseUnit));
       cursor = ls.end;
     }
     pushAll(result, textSliceToRuns(doc, spans, cursor, text.length));
@@ -290,7 +409,7 @@
   function pushAll(arr, items) { for (var i = 0; i < items.length; i++) arr.push(items[i]); }
 
   // ── 섹션 1개 처리 ──────────────────────────────────────────────
-  function processSectionXml(xmlString, idGen, convert, style, stats, DOMParserCls, XMLSerializerCls) {
+  function processSectionXml(xmlString, idGen, convert, style, stats, DOMParserCls, XMLSerializerCls, headerCtx) {
     if (xmlString.indexOf('$') < 0 && xmlString.indexOf('\\(') < 0 && xmlString.indexOf('\\[') < 0) {
       return { xml: xmlString, changed: false };
     }
@@ -311,7 +430,7 @@
         while (idx < children.length && isPlainTextRun(children[idx])) { group.push(children[idx]); idx++; }
         var groupText = group.map(runText).join('');
         if (groupText.indexOf('$') < 0 && groupText.indexOf('\\(') < 0 && groupText.indexOf('\\[') < 0) continue;
-        var res = replaceLatexInRunGroup(doc, group, idGen, convert, style, stats);
+        var res = replaceLatexInRunGroup(doc, group, idGen, convert, style, stats, headerCtx);
         if (res.count) pending.push({ nodes: group, newRuns: res.newRuns, count: res.count });
       }
       for (var g = 0; g < pending.length; g++) {
@@ -322,9 +441,10 @@
         for (var d = 0; d < item.nodes.length; d++) parent.removeChild(item.nodes[d]);
         total += item.count;
       }
-      // 텍스트를 수정한 단락의 줄 배치 캐시(hp:linesegarray)는 더 이상 내용과 맞지
-      // 않는다. 그대로 두면 한글이 파일을 열 때 "복구하였습니다" 경고를 띄우므로,
-      // 변경된 단락의 직속 자식 linesegarray를 제거한다(한글이 다시 열 때 자동 재생성).
+      // 텍스트를 수정한 단락의 라인 레이아웃 캐시(hp:linesegarray)는 무효해진다.
+      // 그대로 두면 한글이 "복구하였습니다" 경고를 띄우므로, 변경된 단락의 직속
+      // 자식 linesegarray만 제거한다. (중첩된 표 안 단락은 따로 처리.)
+      // linesegarray는 한글이 다시 열 때 자동 재생성되는 optional 요소다.
       if (pending.length > 0) {
         var paraKids = elementChildren(para);
         for (var ki = 0; ki < paraKids.length; ki++) {
@@ -336,7 +456,19 @@
     stats.equations += total;
 
     var serialized = new XMLSerializerCls().serializeToString(doc);
-    return { xml: ensureXmlDeclaration(serialized, xmlString), changed: true };
+    var clean = removeRedundantNsDecls(serialized);
+    return { xml: ensureXmlDeclaration(clean, xmlString), changed: true };
+  }
+
+  // XMLSerializer가 새로 생성된 요소마다 인라인으로 중복 삽입하는 xmlns 선언을 제거한다.
+  // 한글 파서는 이를 손상된 구조로 인식해 복구 경고를 띄운다.
+  function removeRedundantNsDecls(xml) {
+    var seen = Object.create(null);
+    return xml.replace(/ xmlns(?::[a-zA-Z0-9_-]+)?="[^"]*"/g, function (match) {
+      if (seen[match]) return '';
+      seen[match] = true;
+      return match;
+    });
   }
 
   function ensureXmlDeclaration(serialized, original) {
@@ -400,18 +532,36 @@
       if (!sectionNames.length) {
         throw new Error('Contents/section*.xml 을 찾지 못했습니다. 올바른 HWPX 파일이 맞나요?');
       }
-      return Promise.all(sectionNames.map(function (n) {
-        return zip.file(n).async('string').then(function (s) { return [n, s]; });
-      })).then(function (pairs) {
+      // 섹션과 함께 header.xml 도 읽어 들인다. header.xml 은 hh:charPr 글자 모양
+      // 정의를 담고 있어, 수식 런이 본문 대비 +1pt 가 되도록 클론 charPr 를
+      // 추가하는 데 필요하다. 파일이 없으면 헤더 보정 없이 진행한다.
+      var headerName = 'Contents/header.xml';
+      var headerPromise = zip.file(headerName)
+        ? zip.file(headerName).async('string')
+        : Promise.resolve(null);
+
+      return Promise.all([
+        Promise.all(sectionNames.map(function (n) {
+          return zip.file(n).async('string').then(function (s) { return [n, s]; });
+        })),
+        headerPromise
+      ]).then(function (results) {
+        var pairs = results[0];
+        var headerXmlStr = results[1];
+
         var sectionXml = {};
         pairs.forEach(function (p) { sectionXml[p[0]] = p[1]; });
+
+        var headerCtx = createHeaderCtx(headerXmlStr, d.DOMParser, d.XMLSerializer);
 
         var idGen = makeIdGenerator(collectUsedIds(Object.keys(sectionXml).map(function (k) { return sectionXml[k]; })));
         var updates = {};
         sectionNames.forEach(function (n) {
-          var res = processSectionXml(sectionXml[n], idGen, d.convert, style, stats, d.DOMParser, d.XMLSerializer);
+          var res = processSectionXml(sectionXml[n], idGen, d.convert, style, stats, d.DOMParser, d.XMLSerializer, headerCtx);
           if (res.changed) { updates[n] = res.xml; stats.sectionsChanged++; }
         });
+
+        if (headerCtx && headerCtx.isDirty()) updates[headerName] = headerCtx.serialize();
 
         return rebuildZip(d.JSZip, zip, updates).then(function (outZip) {
           return outZip.generateAsync({ type: 'blob', mimeType: 'application/octet-stream' })
