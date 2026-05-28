@@ -6,9 +6,13 @@ AI(ChatGPT, Claude 등)가 만든 `$…$`, `$$…$$`, `\(…\)`, `\[…\]` 형�
 
 ## 사용법
 
-`index.html`을 브라우저로 열고 HWPX 파일을 끌어다 놓거나 선택한 뒤 **수식 변환**을 누르면, 변환된 `*_hwp_equations.hwpx`를 내려받습니다.
+`index.html`을 브라우저로 열고 **`.hwp` 또는 `.hwpx`** 파일을 끌어다 놓거나 선택한 뒤 **수식 변환**을 누르면, 변환된 `*_hwp_equations.hwpx`를 내려받습니다.
 
 정적 파일이라 GitHub Pages 등 정적 호스팅에 그대로 올릴 수 있습니다. (CDN 없이 동작 — `vendor/jszip.min.js` 동봉)
+
+### HWP(.hwp) 입력
+
+`.hwp`는 이진(바이너리) 형식이라 직접 다루지 않고, 오픈소스 [rhwp](https://github.com/edwardkim/rhwp)(Rust + WebAssembly)의 공개 인스턴스를 숨긴 iframe으로 불러와 **브라우저 안에서 `.hwpx`로 먼저 변환**한 뒤 동일한 수식 변환 파이프라인을 태웁니다(서버 업로드 없음). **결과물은 `.hwpx`로 내려받습니다.** rhwp 인스턴스가 닫혀 있거나 변환이 실패할 수 있으니, 가능하면 한글에서 `.hwpx`로 저장 후 사용하는 것이 가장 안정적입니다.
 
 ## 동작 방식
 

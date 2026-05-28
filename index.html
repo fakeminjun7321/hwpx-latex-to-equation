@@ -98,8 +98,8 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>HWPX LaTeX → 한글 수식 변환기</h1>
-    <p>HWPX 문서 안의 LaTeX 수식만 한글(HWP) 수식 개체로 바꿔, 새 <code>.hwpx</code> 파일로 내려받습니다. AI가 만든 <code>$…$</code>·<code>$$…$$</code>·<code>\(…\)</code>·<code>\[…\]</code> 수식이 그대로 한글에서 렌더링됩니다.</p>
+    <h1>HWP·HWPX LaTeX → 한글 수식 변환기</h1>
+    <p>HWP·HWPX 문서 안의 LaTeX 수식만 한글(HWP) 수식 개체로 바꿔, 새 <code>.hwpx</code> 파일로 내려받습니다. AI가 만든 <code>$…$</code>·<code>$$…$$</code>·<code>\(…\)</code>·<code>\[…\]</code> 수식이 그대로 한글에서 렌더링됩니다.</p>
   </header>
 
   <div class="card">
@@ -107,10 +107,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>
       </svg>
-      <div class="big">HWPX 파일을 여기에 끌어다 놓기</div>
-      <div class="sub">또는 클릭해서 파일 선택 · <code>.hwpx</code> 만 지원</div>
+      <div class="big">HWP·HWPX 파일을 여기에 끌어다 놓기</div>
+      <div class="sub">또는 클릭해서 파일 선택 · <code>.hwp</code> · <code>.hwpx</code> 지원</div>
     </div>
-    <input type="file" id="file" accept=".hwpx" />
+    <input type="file" id="file" accept=".hwp,.hwpx" />
 
     <div class="file-row" id="fileRow" style="display:none">
       <span class="name" id="fileName"></span>
@@ -127,6 +127,7 @@
 
   <p class="note">
     <b>개인정보:</b> 변환은 전부 <b>브라우저 안에서</b> 실행됩니다. 업로드한 파일은 어떤 서버로도 전송되지 않습니다.<br />
+    <b>HWP(.hwp):</b> 이진 형식이라 오픈소스 <a href="https://github.com/edwardkim/rhwp" target="_blank" rel="noopener">rhwp</a>(WebAssembly)를 빌려 브라우저 안에서 <code>.hwpx</code>로 먼저 바꾼 뒤 수식을 변환합니다(역시 서버 업로드 없음, rhwp 페이지를 불러옵니다). <b>결과물은 <code>.hwpx</code>로 받습니다.</b><br />
     <b>변환 대상:</b> 텍스트로 들어간 LaTeX 구간만 수식 개체로 바꿉니다. <code>$100$</code>처럼 숫자뿐인 달러 표기는 금액으로 보고 건드리지 않습니다. 이미 수식 개체이거나 이미지로 들어간 수식은 대상이 아닙니다.<br />
     <b>확인:</b> 한글 수식 문법은 공식 레퍼런스가 빈약해, 복잡한 수식은 한글에서 직접 열어 확인하길 권합니다.
   </p>
@@ -134,6 +135,7 @@
   <footer>
     변환 엔진·규칙 © 2026 Shin Mingyu — <a href="https://github.com/minigu5/latex-to-hwp" target="_blank" rel="noopener">latex-to-hwp</a>
     (Non-Commercial &amp; Attribution). 본 도구는 이를 포함·파생한 비영리 무료 도구입니다.<br />
+    HWP 변환은 <a href="https://github.com/edwardkim/rhwp" target="_blank" rel="noopener">rhwp</a>(© edwardkim) 인스턴스를 빌려 씁니다.<br />
     <a href="LICENSE">LICENSE</a> · <a href="NOTICE">NOTICE</a> · <a href="CONVERSION_RULES.md">변환 규칙</a>
   </footer>
 </div>
@@ -184,11 +186,11 @@
   function pickFile(file) {
     clearResult();
     if (!file) return;
-    if (!/\.hwpx$/i.test(file.name)) {
+    if (!/\.hwpx?$/i.test(file.name)) {
       currentFile = null;
       fileRow.style.display = 'none';
       actions.style.display = 'none';
-      showError('HWPX(.hwpx) 파일만 변환할 수 있습니다. 선택한 파일: ' + file.name);
+      showError('HWP(.hwp) 또는 HWPX(.hwpx) 파일만 변환할 수 있습니다. 선택한 파일: ' + file.name);
       return;
     }
     currentFile = file;
@@ -206,15 +208,80 @@
     clearResult();
   }
 
+  // .hwp(이진) → 오픈소스 rhwp(WebAssembly) 공개 인스턴스를 숨긴 iframe으로 띄워
+  // .hwpx로 변환한 뒤, 기존 HWPX 파이프라인(HwpxConvert.convertFile)으로 수식을 바꾼다.
+  // 모든 처리는 브라우저 안에서 일어나며(서버 업로드 없음), 결과물은 .hwpx 다.
+  // postMessage 프로토콜은 rhwp의 임베드 에디터(npm/editor) 규약을 따른다.
+  function convertHwpViaRhwp(file) {
+    var RHWP_URL = 'https://edwardkim.github.io/rhwp/';
+    return file.arrayBuffer().then(function (buf) {
+      return new Promise(function (resolve, reject) {
+        var iframe = document.createElement('iframe');
+        iframe.src = RHWP_URL;
+        iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1280px;height:900px;border:none;';
+        document.body.appendChild(iframe);
+
+        var reqId = 0;
+        var pending = new Map();
+        function sendRequest(method, params) {
+          return new Promise(function (res, rej) {
+            var id = ++reqId;
+            pending.set(id, { resolve: res, reject: rej });
+            iframe.contentWindow.postMessage({ type: 'rhwp-request', id: id, method: method, params: params || {} }, '*');
+            setTimeout(function () {
+              if (pending.has(id)) { pending.delete(id); rej(new Error('rhwp 응답 시간 초과: ' + method)); }
+            }, 30000);
+          });
+        }
+        function onMessage(e) {
+          if (e.data && e.data.type === 'rhwp-response' && e.data.id != null) {
+            var r = pending.get(e.data.id);
+            if (r) {
+              pending.delete(e.data.id);
+              if (e.data.error) r.reject(new Error('rhwp 변환 오류: ' + e.data.error));
+              else r.resolve(e.data.result);
+            }
+          }
+        }
+        window.addEventListener('message', onMessage);
+        function cleanup() {
+          window.removeEventListener('message', onMessage);
+          if (iframe.parentNode) document.body.removeChild(iframe);
+        }
+
+        iframe.addEventListener('load', function () {
+          sendRequest('ready')
+            .then(function () { return sendRequest('loadFile', { data: new Uint8Array(buf), fileName: file.name }); })
+            .then(function () { return sendRequest('exportHwpx'); })
+            .then(function (rhwpResult) {
+              cleanup();
+              var bytes = rhwpResult instanceof Uint8Array ? rhwpResult : new Uint8Array(rhwpResult);
+              var hwpxFile = new File(
+                [new Blob([bytes], { type: 'application/vnd.hancom.hwpx' })],
+                file.name.replace(/\.hwp$/i, '.hwpx'),
+                { type: 'application/vnd.hancom.hwpx' }
+              );
+              return window.HwpxConvert.convertFile(hwpxFile);
+            })
+            .then(resolve)
+            .catch(function (err) { cleanup(); reject(err); });
+        });
+      });
+    });
+  }
+
   function runConvert() {
     if (!currentFile) return;
     convertBtn.disabled = true;
     resetBtn.disabled = true;
     clearResult();
     result.style.display = 'block';
-    result.innerHTML = '<div class="badge ok"><span class="spinner"></span> 변환 중…</div>';
+    var isHwp = /\.hwp$/i.test(currentFile.name) && !/\.hwpx$/i.test(currentFile.name);
+    result.innerHTML = '<div class="badge ok"><span class="spinner"></span> ' +
+      (isHwp ? 'rhwp로 .hwp → .hwpx 변환 후 수식 변환 중… (수십 초 걸릴 수 있어요)' : '변환 중…') + '</div>';
 
-    window.HwpxConvert.convertFile(currentFile).then(function (out) {
+    var task = isHwp ? convertHwpViaRhwp(currentFile) : window.HwpxConvert.convertFile(currentFile);
+    task.then(function (out) {
       var s = out.stats;
       lastUrl = URL.createObjectURL(out.blob);
 
