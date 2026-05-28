@@ -103,6 +103,9 @@
     if (/\\[A-Za-z]+|[_^{}=<>]|[+\-*\/|]/.test(value)) return true;
     if (/[A-Za-z]\d|\d[A-Za-z]/.test(value)) return true;
     if (/^[A-Za-z]{1,3}$/.test(value)) return true;
+    // 글자+프라임 형태의 짧은 수식 (S', x', S'' 등). 상대론의 S′·x′ 관성계처럼
+    // 인라인 $S'$ 가 평문으로 남지 않도록 한다. (원본 파이썬 휴리스틱에서 보강)
+    if (/^[A-Za-z]{1,3}['′’]+$/.test(value)) return true;
     return false;
   }
   function findLatexSpans(text, stats) {

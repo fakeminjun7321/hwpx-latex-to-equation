@@ -58,6 +58,11 @@ test('숫자 달러 판별: $100$ 은 변환 안 함, $x$ 류는 변환', () => 
   assert.strictEqual(shouldConvertDollarBody('1,000.50'), false);
   assert.strictEqual(shouldConvertDollarBody('x^2'), true);
   assert.strictEqual(shouldConvertDollarBody('abc'), true);
+  // 글자+프라임 짧은 수식: S', x' (상대론 관성계/축) 도 변환 대상
+  assert.strictEqual(shouldConvertDollarBody("S'"), true);
+  assert.strictEqual(shouldConvertDollarBody("x'"), true);
+  assert.strictEqual(shouldConvertDollarBody("S''"), true);
+  assert.strictEqual(shouldConvertDollarBody("it's"), false); // 프라임형 아닌 일반 어포스트로피는 제외
 });
 
 test('ID 생성기: 기존 최대 id+1 부터, 최소 1000000', () => {
