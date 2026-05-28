@@ -9,7 +9,14 @@
  * 의존성: 전역 JSZip, DOMParser, XMLSerializer, LatexToHwp.convert
  *   (Node 테스트에서는 deps 인자로 주입 가능)
  *
- * 변환 규칙 근거: CONVERSION_RULES.md / converter.js. 원본 저작자 표시(LICENSE) 준수.
+ * ── 출처 표시 / 라이선스 ───────────────────────────────────────────
+ * 이 파일은 latex-to-hwp 프로젝트의 파이썬 CLI(tools/hwpx_latex_to_hwp.py)
+ * HWPX 처리 로직을 브라우저용으로 포팅한 2차적 저작물입니다.
+ *   원저작자: Shin Mingyu (@minigu5)  ·  원본: https://github.com/minigu5/latex-to-hwp
+ *   라이선스: Custom License (Non-Commercial & Attribution) — 저장소 LICENSE 참조
+ * 본 결합 저작물은 변환 엔진(converter.js)을 포함·파생하므로 전체가 위 조건
+ * (출처 표시 + 비영리)의 적용을 받습니다. 자세한 내용은 NOTICE 파일 참조.
+ * 변환 규칙 근거: CONVERSION_RULES.md (한컴 공개 명세 revision 1.2 기반).
  */
 (function (global) {
   'use strict';

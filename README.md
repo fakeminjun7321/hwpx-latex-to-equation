@@ -48,6 +48,17 @@ E2E 테스트는 변환 결과가 원본 파이썬 CLI 출력과 **동일한 수
 - 미확인 LaTeX 명령은 임의로 버리지 않고 이름을 보존합니다.
 - 이미 수식 개체이거나 이미지로 들어간 수식은 변환 대상이 아닙니다.
 
-## 라이선스
+## 라이선스 / 출처 표시
 
-변환 엔진(`src/converter.js`)과 변환 규칙은 © 2026 **Shin Mingyu**, Non-Commercial & Attribution 조건입니다. [LICENSE](./LICENSE)를 확인하세요.
+이 프로젝트는 [latex-to-hwp](https://github.com/minigu5/latex-to-hwp) (© 2026 **Shin Mingyu**, [@minigu5](https://github.com/minigu5))의 **변환 엔진(`src/converter.js`)과 변환 규칙(`CONVERSION_RULES.md`)을 포함**하고, 그 파이썬 CLI의 HWPX 처리 로직을 브라우저로 **포팅(`src/hwpx-convert.js`)**한 2차적 저작물입니다.
+
+원본 라이선스는 **Custom License (Non-Commercial & Attribution)** 이며, 다음을 의미합니다.
+
+- **출처 표시(Attribution):** 저작권 고지와 허가 문구를 모든 복제본에 포함해야 합니다. 본 저장소는 [`LICENSE`](./LICENSE)에 원문을, [`NOTICE`](./NOTICE)에 상세 출처를 담고 있습니다.
+- **비영리(Non-Commercial):** 본 소프트웨어와 그 **파생물은 판매·영리 목적 사용이 금지**됩니다. 본 결합 저작물 전체가 이 조건의 적용을 받으며, 이 사이트는 무료로만 제공됩니다.
+
+신규 코드(브라우저 포팅·UI·테스트)는 © 2026 **구민준**([@fakeminjun7321](https://github.com/fakeminjun7321))이 작성했으나, 위 엔진을 포함·파생하므로 저장소 전체가 동일한 Non-Commercial & Attribution 조건을 따릅니다.
+
+런타임 의존성 **JSZip v3.10.1**(© Stuart Knightley, MIT)은 `vendor/jszip.min.js`에 라이선스 배너를 보존한 채 동봉했습니다. 변환 규칙은 한글과컴퓨터 공개 명세 「한글 문서 파일 형식 - 수식」(rev. 1.2)을 참고했습니다.
+
+영리적 이용 등 위 조건을 벗어난 사용은 원저작자 Shin Mingyu([@minigu5](https://github.com/minigu5))의 별도 허락이 필요합니다. (본 안내는 법률 자문이 아닙니다.)
