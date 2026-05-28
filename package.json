@@ -1,0 +1,13 @@
+{
+  "name": "hwpx-latex-equations",
+  "version": "1.0.0",
+  "description": "HWPX 문서 안의 LaTeX 수식만 한글(HWP) 수식 개체로 변환하는 정적 웹 도구 (브라우저에서 동작).",
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "@xmldom/xmldom": "^0.9.6",
+    "jszip": "^3.10.1"
+  }
+}
