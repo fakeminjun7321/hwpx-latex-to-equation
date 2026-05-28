@@ -322,6 +322,15 @@
         for (var d = 0; d < item.nodes.length; d++) parent.removeChild(item.nodes[d]);
         total += item.count;
       }
+      // 텍스트를 수정한 단락의 줄 배치 캐시(hp:linesegarray)는 더 이상 내용과 맞지
+      // 않는다. 그대로 두면 한글이 파일을 열 때 "복구하였습니다" 경고를 띄우므로,
+      // 변경된 단락의 직속 자식 linesegarray를 제거한다(한글이 다시 열 때 자동 재생성).
+      if (pending.length > 0) {
+        var paraKids = elementChildren(para);
+        for (var ki = 0; ki < paraKids.length; ki++) {
+          if (isHp(paraKids[ki], 'linesegarray')) para.removeChild(paraKids[ki]);
+        }
+      }
     }
     if (total === 0) return { xml: xmlString, changed: false };
     stats.equations += total;

@@ -22,6 +22,14 @@ async function blobToBuffer(blob) {
   return Buffer.from(blob); // Uint8Array fallback
 }
 
+async function makeMiniHwpx(sectionXml) {
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/hwp+zip', { compression: 'STORE' });
+  zip.file('Contents/section0.xml', sectionXml, { compression: 'DEFLATE' });
+  const u8 = await zip.generateAsync({ type: 'uint8array' });
+  return Buffer.from(u8);
+}
+
 async function readScripts(zipBuffer) {
   const zip = await JSZip.loadAsync(zipBuffer);
   const names = Object.keys(zip.files)
@@ -123,4 +131,29 @@ test('E2E: 출력 ZIP 구조 — mimetype 첫 항목 + STORED, $100$ 텍스트 �
   const section0 = await zip.file('Contents/section0.xml').async('string');
   assert.ok(section0.includes('$100$'), '$100$ 평문 보존');
   assert.ok(section0.includes('<hp:equation'), '수식 개체 생성됨');
+});
+
+test('한글 복구 경고 방지: 수정된 단락의 linesegarray 제거, 미수정 단락은 보존', async () => {
+  const NS = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"';
+  const sec =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<hs:sec ' + NS + '>' +
+      '<hp:p id="1"><hp:run charPrIDRef="0"><hp:t>식 $x^2$ 끝</hp:t></hp:run>' +
+        '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0"/></hp:linesegarray></hp:p>' +
+      '<hp:p id="2"><hp:run charPrIDRef="0"><hp:t>일반 문단(수식 없음)</hp:t></hp:run>' +
+        '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0"/></hp:linesegarray></hp:p>' +
+    '</hs:sec>';
+  const buf = await makeMiniHwpx(sec);
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  const { blob, stats } = await HwpxConvert.convertArrayBuffer(ab, DEPS);
+  assert.strictEqual(stats.equations, 1, '수식 1개 변환');
+  const zip = await JSZip.loadAsync(await blobToBuffer(blob));
+  const xml = await zip.file('Contents/section0.xml').async('string');
+
+  const p1 = xml.slice(xml.indexOf('id="1"'), xml.indexOf('id="2"'));
+  assert.ok(p1.includes('<hp:equation'), '수정 단락에 수식 개체 생성');
+  assert.ok(!p1.includes('<hp:linesegarray'), '수정 단락의 linesegarray 제거됨(복구 경고 방지)');
+
+  const p2 = xml.slice(xml.indexOf('id="2"'));
+  assert.ok(p2.includes('<hp:linesegarray'), '미수정 단락의 linesegarray는 보존');
 });
